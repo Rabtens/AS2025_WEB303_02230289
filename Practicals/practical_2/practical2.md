@@ -333,12 +333,15 @@ Services register to Consul running inside Docker, but the gateway cannot reach 
 
 ## Required Screenshots
 
-Include the following screenshots in your submission:
+These are the output screenshots:
 
-- [ ] Consul UI showing both `users-service` and `products-service` as healthy
-- [ ] Postman or cURL output for `/api/users/{id}` request
-- [ ] Postman or cURL output for `/api/products/{id}` request
-- [ ] API Gateway terminal showing request logs (received and forwarded)
+![alt text](<Screenshot from 2025-10-08 10-47-15.png>)
+
+![alt text](<Screenshot from 2025-10-08 10-51-05.png>)
+
+![alt text](<Screenshot from 2025-10-08 10-52-40.png>)
+
+![alt text](<Screenshot from 2025-10-08 11-39-19.png>)
 
 ---
 
@@ -353,7 +356,7 @@ Include the following screenshots in your submission:
 
 ## GitHub Repository
 
-**Repository URL:** [Insert your public GitHub repository link here]
+**Repository URL:** [https://github.com/Rabtens/AS2025_WEB303_02230289]
 
 ---
 
