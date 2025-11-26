@@ -2,7 +2,6 @@
 
 **Module:** WEB303 – Microservices & Serverless Applications  
 **Practical:** 5 – Refactoring a Monolithic Student Café App into Microservices  
-**Perspective:** Student
 
 ---
 
@@ -282,7 +281,7 @@ Each service runs as:
 - All connected by Docker network
 - Consul added for discovery
 
-**Example (simplified):**
+**Example:**
 
 ```yaml
 services:
@@ -354,13 +353,56 @@ I now understand how services validate each other's data.
 
 Each microservice owns its data.
 
-### Preparing for real-world systems
-
-This practical reflects actual industry migration patterns.
-
 ---
 
-## 15. Conclusion
+## 15. Output Screenshot
+
+API Testing
+
+![alt text](<Screenshot from 2025-11-26 11-48-16.png>)
+
+Create user 
+
+![alt text](<Screenshot from 2025-11-26 11-48-03.png>)
+
+Create menu
+
+![alt text](<Screenshot from 2025-11-26 11-47-50.png>)
+
+![alt text](<Screenshot from 2025-11-26 11-47-36.png>)
+
+Create order
+
+![alt text](<Screenshot from 2025-11-26 11-47-21.png>)
+
+![alt text](<Screenshot from 2025-11-26 11-46-59.png>)
+
+Inter-Service Communication Logs
+
+![alt text](<Screenshot from 2025-11-26 11-46-30.png>)
+
+# Quick Test Commands
+
+```
+# Start services
+docker-compose up --build -d
+
+# Test complete flow
+curl -X POST http://localhost:8080/api/users \
+  -d '{"name": "Alice", "email": "alice@test.com", "is_cafe_owner": false}'
+
+curl -X POST http://localhost:8080/api/menu \
+  -d '{"name": "Coffee", "description": "Hot coffee", "price": 3.00}'
+
+curl -X POST http://localhost:8080/api/orders \
+  -d '{"user_id": 1, "items": [{"menu_item_id": 1, "quantity": 2}]}'
+
+# Verify
+curl http://localhost:8080/api/orders
+
+```
+
+## 16. Conclusion
 
 This practical gave me a strong understanding of how to break a monolithic application into microservices step-by-step. By applying Domain-Driven Design, I selected the correct service boundaries. By gradually extracting services, I minimized risks. I learned how to use Docker Compose to run multiple services and how inter-service communication works in real systems.
 

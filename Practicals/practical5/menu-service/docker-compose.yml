@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: student_cafe
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  menu-db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: menu_db
+    ports:
+      - "5433:5432"  # Different host port
+    volumes:
+      - menu_data:/var/lib/postgresql/data
+
+  monolith:
+    build: ./student-cafe-monolith
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: "host=postgres user=postgres password=postgres dbname=student_cafe port=5432 sslmode=disable"
+
+  menu-service:
+    build: ./menu-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - menu-db
+    environment:
+      DATABASE_URL: "host=menu-db user=postgres password=postgres dbname=menu_db port=5432 sslmode=disable"
+      PORT: "8082"
+
+volumes:
+  postgres_data:
+  menu_data:
