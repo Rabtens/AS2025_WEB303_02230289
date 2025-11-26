@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">user-service/grpc/server.go (84.2%)</option>
+				<option value="file0">user-service/grpc/server.go (100.0%)</option>
 				
 				</select>
 			</div>
@@ -101,7 +101,7 @@ func (s *UserServer) CreateUser(ctx context.Context, req *userv1.CreateUserReque
                 IsCafeOwner: req.IsCafeOwner,
         }
 
-        if err := database.DB.Create(&amp;user).Error; err != nil </span><span class="cov0" title="0">{
+        if err := database.DB.Create(&amp;user).Error; err != nil </span><span class="cov8" title="1">{
                 return nil, status.Errorf(codes.Internal, "failed to create user: %v", err)
         }</span>
 
@@ -117,7 +117,7 @@ func (s *UserServer) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*
                 if err == gorm.ErrRecordNotFound </span><span class="cov8" title="1">{
                         return nil, status.Errorf(codes.NotFound, "user not found")
                 }</span>
-                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)</span>
+                <span class="cov8" title="1">return nil, status.Errorf(codes.Internal, "failed to get user: %v", err)</span>
         }
 
         <span class="cov8" title="1">return &amp;userv1.GetUserResponse{
@@ -128,7 +128,7 @@ func (s *UserServer) GetUser(ctx context.Context, req *userv1.GetUserRequest) (*
 // GetUsers retrieves all users
 func (s *UserServer) GetUsers(ctx context.Context, req *userv1.GetUsersRequest) (*userv1.GetUsersResponse, error) <span class="cov8" title="1">{
         var users []models.User
-        if err := database.DB.Find(&amp;users).Error; err != nil </span><span class="cov0" title="0">{
+        if err := database.DB.Find(&amp;users).Error; err != nil </span><span class="cov8" title="1">{
                 return nil, status.Errorf(codes.Internal, "failed to get users: %v", err)
         }</span>
 

@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">menu-service/grpc/server.go (84.2%)</option>
+				<option value="file0">menu-service/grpc/server.go (100.0%)</option>
 				
 				</select>
 			</div>
@@ -100,7 +100,7 @@ func (s *MenuServer) GetMenuItem(ctx context.Context, req *menuv1.GetMenuItemReq
                 if err == gorm.ErrRecordNotFound </span><span class="cov8" title="1">{
                         return nil, status.Errorf(codes.NotFound, "menu item not found")
                 }</span>
-                <span class="cov0" title="0">return nil, status.Errorf(codes.Internal, "failed to get menu item: %v", err)</span>
+                <span class="cov8" title="1">return nil, status.Errorf(codes.Internal, "failed to get menu item: %v", err)</span>
         }
 
         <span class="cov8" title="1">return &amp;menuv1.GetMenuItemResponse{
@@ -111,7 +111,7 @@ func (s *MenuServer) GetMenuItem(ctx context.Context, req *menuv1.GetMenuItemReq
 // GetMenu retrieves all menu items
 func (s *MenuServer) GetMenu(ctx context.Context, req *menuv1.GetMenuRequest) (*menuv1.GetMenuResponse, error) <span class="cov8" title="1">{
         var menuItems []models.MenuItem
-        if err := database.DB.Find(&amp;menuItems).Error; err != nil </span><span class="cov0" title="0">{
+        if err := database.DB.Find(&amp;menuItems).Error; err != nil </span><span class="cov8" title="1">{
                 return nil, status.Errorf(codes.Internal, "failed to get menu: %v", err)
         }</span>
 
@@ -133,7 +133,7 @@ func (s *MenuServer) CreateMenuItem(ctx context.Context, req *menuv1.CreateMenuI
                 Price:       req.Price,
         }
 
-        if err := database.DB.Create(&amp;menuItem).Error; err != nil </span><span class="cov0" title="0">{
+        if err := database.DB.Create(&amp;menuItem).Error; err != nil </span><span class="cov8" title="1">{
                 return nil, status.Errorf(codes.Internal, "failed to create menu item: %v", err)
         }</span>
 

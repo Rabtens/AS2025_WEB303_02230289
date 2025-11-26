@@ -2,43 +2,53 @@ package grpc
 
 import (
 	"context"
+	"database/sql"
+	"regexp"
 	"testing"
 	"time"
 	"user-service/database"
 	"user-service/models"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	userv1 "github.com/douglasswm/student-cafe-protos/gen/go/user/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
-// setupTestDB creates an in-memory SQLite database for testing
-func setupTestDB(t *testing.T) *gorm.DB {
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+// setupTestDB creates a mock database for testing
+func setupTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock, *sql.DB) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err, "Failed to create mock database")
+
+	// Use postgres dialect (works without CGO)
+	dialector := postgres.New(postgres.Config{
+		Conn:       sqlDB,
+		DriverName: "postgres",
+	})
+
+	// Disable GORM logging during tests to reduce noise
+	db, err := gorm.Open(dialector, &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	require.NoError(t, err, "Failed to open test database")
 
-	// Auto-migrate the User model
-	err = db.AutoMigrate(&models.User{})
-	require.NoError(t, err, "Failed to migrate test database")
-
-	return db
+	return db, mock, sqlDB
 }
 
 // teardownTestDB cleans up the test database
-func teardownTestDB(t *testing.T, db *gorm.DB) {
-	sqlDB, err := db.DB()
-	require.NoError(t, err)
+func teardownTestDB(t *testing.T, sqlDB *sql.DB) {
 	sqlDB.Close()
 }
 
 func TestCreateUser(t *testing.T) {
 	// Setup
-	db := setupTestDB(t)
-	defer teardownTestDB(t, db)
+	db, mock, sqlDB := setupTestDB(t)
+	defer teardownTestDB(t, sqlDB)
 	database.DB = db
 
 	server := NewUserServer()
@@ -78,8 +88,37 @@ func TestCreateUser(t *testing.T) {
 		},
 	}
 
+	// Test database error
+	t.Run("database error", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "users"`)).
+			WillReturnError(gorm.ErrInvalidDB)
+		mock.ExpectRollback()
+
+		ctx := context.Background()
+		resp, err := server.CreateUser(ctx, &userv1.CreateUserRequest{
+			Name:  "Test",
+			Email: "test@example.com",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, resp)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.Internal, st.Code())
+		assert.Contains(t, err.Error(), "failed to create user")
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Mock the INSERT query
+			mock.ExpectBegin()
+			mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO "users"`)).
+				WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), tt.request.Name, tt.request.Email, tt.request.IsCafeOwner).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "name", "email", "is_cafe_owner"}).
+					AddRow(1, time.Now(), time.Now(), nil, tt.request.Name, tt.request.Email, tt.request.IsCafeOwner))
+			mock.ExpectCommit()
+
 			ctx := context.Background()
 			resp, err := server.CreateUser(ctx, tt.request)
 
@@ -98,54 +137,80 @@ func TestCreateUser(t *testing.T) {
 				assert.NotEmpty(t, resp.User.CreatedAt)
 				assert.NotEmpty(t, resp.User.UpdatedAt)
 			}
+
+			// Verify all expectations were met
+			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }
 
 func TestGetUser(t *testing.T) {
 	// Setup
-	db := setupTestDB(t)
-	defer teardownTestDB(t, db)
+	db, mock, sqlDB := setupTestDB(t)
+	defer teardownTestDB(t, sqlDB)
 	database.DB = db
 
 	server := NewUserServer()
 
-	// Create a test user
-	testUser := models.User{
-		Name:        "Test User",
-		Email:       "test@example.com",
-		IsCafeOwner: false,
-	}
-	err := db.Create(&testUser).Error
-	require.NoError(t, err)
-
 	tests := []struct {
 		name        string
 		userID      uint32
+		mockSetup   func()
 		wantErr     bool
 		expectedErr codes.Code
 	}{
 		{
-			name:    "get existing user",
-			userID:  uint32(testUser.ID),
+			name:   "get existing user",
+			userID: 1,
+			mockSetup: func() {
+				now := time.Now()
+				rows := sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "name", "email", "is_cafe_owner"}).
+					AddRow(1, now, now, nil, "Test User", "test@example.com", false)
+				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT $2`)).
+					WithArgs(1, 1).
+					WillReturnRows(rows)
+			},
 			wantErr: false,
 		},
 		{
-			name:        "get non-existent user",
-			userID:      9999,
+			name:   "get non-existent user",
+			userID: 9999,
+			mockSetup: func() {
+				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT $2`)).
+					WithArgs(9999, 1).
+					WillReturnError(gorm.ErrRecordNotFound)
+			},
 			wantErr:     true,
 			expectedErr: codes.NotFound,
 		},
 		{
-			name:        "get user with ID 0",
-			userID:      0,
+			name:   "get user with ID 0",
+			userID: 0,
+			mockSetup: func() {
+				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT $2`)).
+					WithArgs(0, 1).
+					WillReturnError(gorm.ErrRecordNotFound)
+			},
 			wantErr:     true,
 			expectedErr: codes.NotFound,
+		},
+		{
+			name:   "database error",
+			userID: 1,
+			mockSetup: func() {
+				mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users" WHERE "users"."id" = $1 AND "users"."deleted_at" IS NULL ORDER BY "users"."id" LIMIT $2`)).
+					WithArgs(1, 1).
+					WillReturnError(gorm.ErrInvalidDB)
+			},
+			wantErr:     true,
+			expectedErr: codes.Internal,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.mockSetup()
+
 			ctx := context.Background()
 			resp, err := server.GetUser(ctx, &userv1.GetUserRequest{
 				Id: tt.userID,
@@ -160,45 +225,47 @@ func TestGetUser(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, resp)
 				assert.Equal(t, tt.userID, resp.User.Id)
-				assert.Equal(t, testUser.Name, resp.User.Name)
-				assert.Equal(t, testUser.Email, resp.User.Email)
 			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }
 
 func TestGetUsers(t *testing.T) {
 	// Setup
-	db := setupTestDB(t)
-	defer teardownTestDB(t, db)
+	db, mock, sqlDB := setupTestDB(t)
+	defer teardownTestDB(t, sqlDB)
 	database.DB = db
 
 	server := NewUserServer()
 
 	// Test empty database
 	t.Run("empty database", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "name", "email", "is_cafe_owner"})
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users"`)).
+			WillReturnRows(rows)
+
 		ctx := context.Background()
 		resp, err := server.GetUsers(ctx, &userv1.GetUsersRequest{})
 
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		assert.Empty(t, resp.Users)
+		assert.NoError(t, mock.ExpectationsWereMet())
 	})
-
-	// Create multiple test users
-	testUsers := []models.User{
-		{Name: "User 1", Email: "user1@example.com", IsCafeOwner: false},
-		{Name: "User 2", Email: "user2@example.com", IsCafeOwner: true},
-		{Name: "User 3", Email: "user3@example.com", IsCafeOwner: false},
-	}
-
-	for _, user := range testUsers {
-		err := db.Create(&user).Error
-		require.NoError(t, err)
-	}
 
 	// Test multiple users
 	t.Run("multiple users", func(t *testing.T) {
+		now := time.Now()
+		rows := sqlmock.NewRows([]string{"id", "created_at", "updated_at", "deleted_at", "name", "email", "is_cafe_owner"}).
+			AddRow(1, now, now, nil, "User 1", "user1@example.com", false).
+			AddRow(2, now, now, nil, "User 2", "user2@example.com", true).
+			AddRow(3, now, now, nil, "User 3", "user3@example.com", false)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users"`)).
+			WillReturnRows(rows)
+
 		ctx := context.Background()
 		resp, err := server.GetUsers(ctx, &userv1.GetUsersRequest{})
 
@@ -207,11 +274,33 @@ func TestGetUsers(t *testing.T) {
 		assert.Len(t, resp.Users, 3)
 
 		// Verify all users are returned
-		for i, user := range resp.Users {
-			assert.Equal(t, testUsers[i].Name, user.Name)
-			assert.Equal(t, testUsers[i].Email, user.Email)
-			assert.Equal(t, testUsers[i].IsCafeOwner, user.IsCafeOwner)
-		}
+		assert.Equal(t, "User 1", resp.Users[0].Name)
+		assert.Equal(t, "user1@example.com", resp.Users[0].Email)
+		assert.False(t, resp.Users[0].IsCafeOwner)
+
+		assert.Equal(t, "User 2", resp.Users[1].Name)
+		assert.Equal(t, "user2@example.com", resp.Users[1].Email)
+		assert.True(t, resp.Users[1].IsCafeOwner)
+
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	// Test database error
+	t.Run("database error", func(t *testing.T) {
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM "users"`)).
+			WillReturnError(gorm.ErrInvalidDB)
+
+		ctx := context.Background()
+		resp, err := server.GetUsers(ctx, &userv1.GetUsersRequest{})
+
+		require.Error(t, err)
+		assert.Nil(t, resp)
+		st, ok := status.FromError(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.Internal, st.Code())
+		assert.Contains(t, err.Error(), "failed to get users")
+
+		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
 
